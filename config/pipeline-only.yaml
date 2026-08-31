@@ -1,0 +1,158 @@
+# ---------------------------------------------------------------------------
+# Alarm pipeline only - PRTG alarms start investigations, no MCP tools.
+#
+# For the customer who has an Agent Space, has a VPC, and wants PRTG alarms to
+# open investigations automatically - but is not ready to hand the agent a live
+# connection into PRTG, or has to clear that through review first.
+#
+# Differences from default.yaml, and only these:
+#
+#   deploy_mcp_server  true  -> false     (half 1 only)
+#   network.vpc_id           -> your existing VPC, subnets pinned
+#
+# What you still get: PRTG notifications become investigations, with the sensor's
+# PRTG object IDs attached, deduplicated, priority-mapped, and routed to your
+# Agent Space.
+#
+# What you give up: the agent cannot query PRTG. It receives the alarm and the
+# object IDs, and correlates against AWS telemetry only - so an investigation says
+# "sensor 2071 went down at 02:14" but cannot then ask what else on that device is
+# failing, or whether the drop was gradual. That second half is the part that
+# shortens diagnosis, so treat this as a staging post rather than a destination.
+#
+# Deploy with:
+#     export DEVOPS_AGENT_SPACE_ID=<your agent space id>
+#     export PRTG_SOURCE_IP=<public IP of your PRTG server>
+#     make deploy-pipeline CONFIG=config/pipeline-only.yaml
+#
+# Prerequisites this stack does NOT create:
+#   - The Agent Space. See https://docs.aws.amazon.com/devopsagent/latest/userguide/
+#   - The PRTG notification template and trigger. The stack emits
+#     PrtgNotificationUrl, PrtgNotificationPayload and PrtgSniRequirement as
+#     outputs; docs/prtg-setup.md covers the four PRTG quirks, one of which makes
+#     PRTG report success while sending nothing.
+# ---------------------------------------------------------------------------
+
+region: ap-southeast-2
+name_prefix: prtg-mcp
+
+# Half 1 only: PRTG -> agent.
+#
+# No AgentCore Gateway, no tool Lambda, no PRTG credential. Note what that last
+# one means: this deployment never authenticates to PRTG at all, because nothing
+# in it calls PRTG. There is no secret to populate and nothing to rotate.
+deploy_mcp_server: false
+deploy_alarm_pipeline: true
+
+# --- Knob 1: network egress ------------------------------------------------
+network:
+  mode: nat
+
+  # Deploy into a VPC you already run. The pipeline Lambda talks only to AWS APIs
+  # - Secrets Manager is not among them here - so it has no reachability
+  # requirement toward PRTG and no route to establish.
+  #
+  # NOTE: mode: private is currently the wrong choice for a pipeline-only
+  # deployment. The function is VPC-attached and needs a network path to the
+  # DevOps Agent API to call CreateBacklogTask; see docs/deployment-matrix.md
+  # before switching.
+  vpc_id: ${VPC_ID:-vpc-0123456789abcdef0}
+
+  # Listing subnet_ids and availability_zones together avoids the synthesis-time
+  # EC2 lookup, so this file synthesises with no AWS credentials.
+  subnet_ids:
+    - ${SUBNET_A:-subnet-0aaaaaaaaaaaaaaaa}
+    - ${SUBNET_B:-subnet-0bbbbbbbbbbbbbbbb}
+  availability_zones:
+    - ap-southeast-2a
+    - ap-southeast-2b
+
+# --- Knob 2: not used here -------------------------------------------------
+# There is no Gateway to authenticate to. Left at the default so switching
+# deploy_mcp_server back on needs no other change.
+auth:
+  mode: sigv4
+
+# --- Knob 3: not used here -------------------------------------------------
+# Nothing in this deployment reads a PRTG credential. The secret is still created,
+# so that enabling the MCP server later does not require a second trip through
+# whatever process governs secret creation in your account.
+secret:
+  mode: local
+  secret_name: prtg-mcp/credentials
+  credential_ttl_seconds: 900
+
+# --- Knob 4: recorded, not enforced ----------------------------------------
+# No function in this deployment connects to PRTG, so nothing is scoped to this
+# address. It is here because it documents where PRTG is, and because enabling the
+# MCP server later makes it load-bearing immediately.
+prtg:
+  reachability: remote
+  host_cidr: ${PRTG_HOST_IP:-10.50.12.40}/32
+  cidr: ${PRTG_NETWORK_CIDR:-10.50.0.0/16}
+  verify_tls: true
+  port: 443
+
+# --- Knob 5: which Agent Space receives investigations ---------------------
+targeting:
+  # One Agent Space in this account. For routing alarms to Agent Spaces across
+  # several accounts by PRTG group, probe or device prefix, see
+  # multi-account-fanout.yaml.
+  mode: single
+
+  # The Agent Space must already exist. This is the field that matters most in
+  # this file: it is where every investigation lands.
+  agent_space_id: ${DEVOPS_AGENT_SPACE_ID}
+
+  # Suppress duplicate investigations for the same sensor and state inside this
+  # window, using CreateBacklogTask's idempotency token. A flapping sensor
+  # produces one investigation rather than one per poll.
+  deduplication_window_minutes: 30
+
+  # Nothing to register: there is no Gateway. Enabling this without also enabling
+  # deploy_mcp_server is rejected at synthesis.
+  register_with_agent_space: false
+
+# --- Who may post alarms ---------------------------------------------------
+# The control that matters in this deployment. PRTG's "Execute HTTP Action" cannot
+# send custom headers, so an API key, a bearer token and a signed request are all
+# unavailable - the source address is the only control there is. A public endpoint
+# with no restriction would let anyone create investigations in your Agent Space.
+#
+# With alarm_api_private: false this must be PRTG's PUBLIC address, which for a
+# server behind a NAT gateway is the gateway's address, not PRTG's own. Find it by
+# running this on the PRTG host:
+#     curl https://checkip.amazonaws.com
+alarm_allowed_source_ips:
+  - ${PRTG_SOURCE_IP}/32
+
+# Set true when PRTG has no public address. Note that this changes what the list
+# above must contain - a private API sees PRTG's address on the network, not the
+# address it egresses as - and that it requires network.vpc_id, which is set.
+alarm_api_private: false
+
+observability:
+  log_retention_days: 30
+
+  # Worth setting here in particular. This deployment's failure mode is an alarm
+  # that never becomes an investigation, which is silent by nature: PRTG reports
+  # success and nobody is waiting on a result that would be missed.
+  alarm_email: ${ALARM_EMAIL:-}
+  dashboard: true
+  tracing: true
+
+# Not deployed here. Left at the defaults so enabling the MCP server is one field.
+mcp_lambda:
+  memory_mb: 256
+  timeout_seconds: 30
+  reserved_concurrency: 10
+
+pipeline_lambda:
+  memory_mb: 256
+  timeout_seconds: 30
+  reserved_concurrency: 10
+
+tags:
+  Project: prtg-mcp-devops-agent
+  ManagedBy: cdk
+  Deployment: pipeline-only

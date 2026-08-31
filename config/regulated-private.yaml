@@ -1,0 +1,241 @@
+# ---------------------------------------------------------------------------
+# Fully private, regulated environment.
+#
+# Differences from default.yaml, and only these:
+#
+#   network.mode          nat        -> private   (no internet at all)
+#   network.vpc_id                   -> existing VPC, subnets pinned
+#   auth.mode             sigv4      -> oidc / Entra ID
+#   secret.mode           local      -> external  (security account)
+#   prtg.reachability     same-vpc   -> remote    (on-premises)
+#   alarm_api_private     false      -> true      (PRTG has no public address)
+#
+# targeting stays `single`. Every other knob is independent of these, which is
+# the point of the model: this is not a different architecture, it is the same
+# stack with five values changed.
+#
+# In the conventional scenario numbering this is roughly MCP Scenario 10 combined
+# with pipeline Scenario C. See docs/deployment-matrix.md.
+#
+# Prerequisites this stack does NOT create:
+#   - Network path to PRTG (VPC peering, Transit Gateway, or Site-to-Site VPN).
+#     It needs agreement from the other side of the link, so it is yours to make.
+#   - The Entra ID app registration.
+#   - The secret in the security account.
+# ---------------------------------------------------------------------------
+
+region: eu-central-1
+account: ${AWS_ACCOUNT_ID:-111122223333}
+name_prefix: prtg-mcp
+
+deploy_mcp_server: true
+deploy_alarm_pipeline: true
+
+# --- Knob 1: no internet ---------------------------------------------------
+network:
+  # No NAT gateway and no internet gateway. Every AWS API call leaves through an
+  # interface VPC endpoint and no traffic touches the public internet.
+  #
+  # The stack creates the endpoints this integration needs. Getting that list wrong
+  # produces characteristically confusing failures, which is why it is derived from
+  # this mode rather than configured:
+  #
+  #   secretsmanager  omit it and the function times out fetching the credential
+  #   logs            omit it and the function runs but writes nothing to
+  #                   CloudWatch, so it looks like it is never invoked at all
+  #   lambda          omit it and the Gateway cannot invoke the function
+  #   sts             omit it and cross-account role assumption times out
+  #   sqs             omit it and the alarm pipeline cannot park an alarm it
+  #                   failed to process, so the one mechanism that stops an alarm
+  #                   being lost is unreachable exactly when it is needed
+  #   aidevops-       omit it and CreateBacklogTask hangs until the function times
+  #     dataplane     out. Nothing is logged past routing, and because a timeout
+  #                   kills the process rather than raising, the dead-letter park
+  #                   never runs either -- the alarm is simply gone
+  #
+  # aidevops-dataplane also needs the client pointed at it, which the stack does by
+  # setting DEVOPS_ENDPOINT_URL. Unlike the others it serves a hostname in a
+  # different domain from the SDK's default, so private DNS alone does not
+  # intercept the call. See docs/deployment-matrix.md.
+  #
+  # About USD 7.30/month per endpoint in one AZ. This file creates seven - the six
+  # a both-halves deployment needs, plus execute-api for the private alarm API below
+  # - so roughly USD 51, against about USD 32 for the NAT gateway it replaces. More
+  # expensive, and nothing leaves the AWS network.
+  mode: private
+
+  # Deploy into the VPC that already has a route to PRTG.
+  #
+  # BEFORE YOU DO: if anything else runs in this VPC, check what it talks to.
+  #
+  # The endpoints above are created with private DNS enabled, and that is a
+  # VPC-WIDE setting. Once they exist, secretsmanager.<region>.amazonaws.com and every
+  # other name in the list resolve to them for every resource in the VPC - while the
+  # endpoint security group admits only this stack's function. Any existing workload here
+  # that reaches those services over public endpoints stops working: its egress rules
+  # and NAT route are still fine, DNS simply stops handing it a public address and the
+  # endpoint drops the packet.
+  #
+  # It presents as a hang with no diagnostic, in a workload nobody touched. Observed
+  # exactly that way in testing. Inventory the VPC first, and add the affected security
+  # groups to the endpoint security group. See docs/deployment-matrix.md.
+  vpc_id: ${VPC_ID:-vpc-0123456789abcdef0}
+
+  # Listing subnet_ids and availability_zones together avoids the synthesis-time
+  # EC2 lookup, so this file synthesises with no AWS credentials - which is what
+  # lets CI verify it. With vpc_id alone, CDK calls EC2 during synth and needs
+  # credentials.
+  #
+  # The two lists are matched positionally. Pin them to the AZs nearest PRTG:
+  # every tool call crosses this boundary, and cross-AZ transfer is charged.
+  subnet_ids:
+    - ${SUBNET_A:-subnet-0aaaaaaaaaaaaaaaa}
+    - ${SUBNET_B:-subnet-0bbbbbbbbbbbbbbbb}
+  availability_zones:
+    - eu-central-1a
+    - eu-central-1b
+
+# --- Knob 2: Entra ID ------------------------------------------------------
+auth:
+  mode: oidc
+
+  # cognito - a user pool is created here and these three values derived from it.
+  # entra   - Microsoft Entra ID; the app registration already exists.
+  # generic - Okta, Auth0, Keycloak, Ping, or any OIDC provider.
+  #
+  # entra and generic build identical infrastructure. They differ only in where
+  # the three values below come from, so pick whichever names your provider.
+  provider: entra
+
+  # Must end with /.well-known/openid-configuration.
+  discovery_url: https://login.microsoftonline.com/${ENTRA_TENANT_ID:-00000000-0000-0000-0000-000000000000}/v2.0/.well-known/openid-configuration
+
+  # Both of these are required, not optional. Without allowed_audience the
+  # Gateway accepts any token that provider issued for any application; without
+  # allowed_clients any client registered in the tenant can call it. The
+  # reference CLI left both open.
+  allowed_audience:
+    - api://${ENTRA_CLIENT_ID:-00000000-0000-0000-0000-000000000001}
+  allowed_clients:
+    - ${ENTRA_CLIENT_ID:-00000000-0000-0000-0000-000000000001}
+
+  # Note on token-based auth: a leaked token stays valid until it expires, and
+  # revoking it at the identity provider does not invalidate it at the Gateway.
+  # Keep lifetimes short and read docs/security.md before choosing this over IAM.
+
+# --- Knob 3: secret in a separate account ----------------------------------
+secret:
+  # Nothing is created. The execution role is granted read on this one ARN.
+  #
+  # Cross-account access needs BOTH a Secrets Manager resource policy on the
+  # secret AND a KMS key policy grant on its customer-managed key. Applying only
+  # one produces an AccessDenied that reads like an IAM problem and sends people
+  # looking in the wrong place. The stack emits both documents as outputs for the
+  # secret's owner to apply.
+  #
+  # Note also that the AWS managed key cannot be shared across accounts at all,
+  # so the secret must use a customer-managed key.
+  mode: external
+  secret_arn: arn:aws:secretsmanager:eu-central-1:${SECURITY_ACCOUNT_ID:-999988887777}:secret:prtg-mcp/credentials-a1b2c3
+  # REQUIRED for a cross-account secret, and the third grant people miss. The two
+  # documents above are applied by the secret's owner; this one is applied here, to
+  # THIS deployment's execution role, because cross-account KMS needs the grant on
+  # both sides. An imported secret does not tell CDK which key encrypts it, so
+  # unlike a secret this stack creates the key has to be named.
+  #
+  # Omit it and the deployment still succeeds while every credential read fails with
+  # "Access to KMS is not allowed" -- the same error as a missing key policy, which is
+  # what makes it slow to place. Config validation now refuses it rather than letting
+  # you find out at the first tool call.
+  kms_key_arn: arn:aws:kms:eu-central-1:${SECURITY_ACCOUNT_ID:-999988887777}:key/00000000-1111-2222-3333-444444444444
+
+  # PRTG's certificate in PEM form, so verification can stay on against a
+  # self-signed certificate. This is the alternative to prtg.verify_tls: false,
+  # and it is the one to choose - especially here, where traffic crosses a network
+  # boundary to reach PRTG.
+  ca_bundle_secret_arn: arn:aws:secretsmanager:eu-central-1:${SECURITY_ACCOUNT_ID:-999988887777}:secret:prtg-mcp/ca-bundle-d4e5f6
+
+  # Shorter than the default, so a rotation in the security account takes effect
+  # sooner across the account boundary.
+  credential_ttl_seconds: 300
+
+# --- Knob 4: PRTG on-premises ----------------------------------------------
+prtg:
+  reachability: remote
+
+  # host_cidr restricts the Lambda's egress to exactly this address on 443,
+  # which is the tightest posture available and what the security review
+  # recommends. Prefer it over opening the whole network CIDR.
+  host_cidr: ${PRTG_HOST_IP:-10.50.12.40}/32
+
+  # The wider network, for reference and for the route documentation. Not needed
+  # for the security group when host_cidr is set.
+  cidr: ${PRTG_NETWORK_CIDR:-10.50.0.0/16}
+
+  verify_tls: true
+  port: 443
+
+  # A little more generous than the default: an on-premises round trip over a VPN
+  # or Transit Gateway has further to travel.
+  connect_timeout_seconds: 8.0
+  read_timeout_seconds: 25.0
+  max_retries: 2
+
+# --- Knob 5: one Agent Space -----------------------------------------------
+targeting:
+  mode: single
+  agent_space_id: ${DEVOPS_AGENT_SPACE_ID}
+  deduplication_window_minutes: 30
+
+# --- Private alarm ingress -------------------------------------------------
+# PRTG has no public address, so the API is private and reachable only through
+# an execute-api interface endpoint. This also means the endpoint cannot be
+# reached from the internet at all, which is a stronger guarantee than an IP
+# allowlist on a public endpoint.
+#
+# PRTG must still have SNI enabled for the request to arrive. Without it the TLS
+# handshake completes, the request silently vanishes, and PRTG cheerfully reports
+# success - see docs/troubleshooting.md.
+alarm_api_private: true
+
+# Load-bearing, not decoration - and it is easy to assume otherwise.
+#
+# With a private API this list does NOT appear in the resource policy, which is keyed
+# on aws:SourceVpce instead. What it does build is the execute-api endpoint's security
+# group ingress, so it decides whether PRTG can open a connection at all. It therefore
+# has to be PRTG's address ON THE NETWORK, matching prtg.host_cidr above - not the
+# public address PRTG egresses as, which is what a *public* API would see.
+#
+# Get it wrong and the API hostname still resolves to the endpoint and the connection is
+# then refused, with no HTTP status and nothing in any log, because a security group drop
+# is silent. Deploying this file with a public address here is a diagnosable-only-by-
+# guesswork failure.
+alarm_allowed_source_ips:
+  - ${PRTG_HOST_IP:-10.50.12.40}/32
+
+observability:
+  log_retention_days: 90
+  alarm_topic_arn: ${ALARM_TOPIC_ARN:-arn:aws:sns:eu-central-1:111122223333:ops-alerts}
+  dashboard: true
+  tracing: true
+
+mcp_lambda:
+  memory_mb: 512
+  timeout_seconds: 45
+  reserved_concurrency: 10
+
+  # VPC cold starts add seconds for ENI attachment. One provisioned unit keeps a
+  # warm environment ready, for about USD 2.50/month. Worth it where the first
+  # tool call of an investigation should not be the slow one.
+  provisioned_concurrency: 1
+
+pipeline_lambda:
+  memory_mb: 256
+  timeout_seconds: 30
+  reserved_concurrency: 10
+
+tags:
+  Project: prtg-mcp-devops-agent
+  ManagedBy: cdk
+  DataClassification: internal
+  Compliance: regulated

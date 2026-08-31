@@ -1,0 +1,11 @@
+{
+  "name": "sample-devops-agent-prtg-mcp",
+  "private": true,
+  "description": "Pins the AWS CDK CLI so it matches the aws-cdk-lib version in requirements-dev.txt. The CLI and library version themselves independently, and a mismatch fails with an opaque cloud-assembly schema error rather than anything actionable.",
+  "devDependencies": {
+    "aws-cdk": "2.1138.0"
+  },
+  "scripts": {
+    "cdk": "cdk"
+  }
+}

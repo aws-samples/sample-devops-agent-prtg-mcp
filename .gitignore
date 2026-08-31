@@ -1,0 +1,66 @@
+# ---------------------------------------------------------------------------
+# Never published
+# ---------------------------------------------------------------------------
+
+.reference/
+.kiro/
+
+# ---------------------------------------------------------------------------
+# Build and dependency artefacts
+# ---------------------------------------------------------------------------
+
+# Node dependencies. Only the CDK CLI lives here; package-lock.json IS committed,
+# because pinning the CLI to a version matching aws-cdk-lib is the entire reason
+# package.json exists. A mismatch fails with an opaque cloud-assembly schema error.
+node_modules/
+
+# CDK synthesis output.
+cdk.out/
+.cdk.staging/
+
+# Context cache from Vpc.from_lookup and similar. Committing it makes builds
+# reproducible and avoids repeat AWS calls, so consider tracking it if you rely on
+# lookups. Ignored here because every shipped config avoids lookups entirely.
+cdk.context.json
+
+# Generated at synthesis from src/prtg_mcp/tools.py. Deliberately not committed:
+# a second copy of the tool schema is a second place for it to drift.
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+.venv/
+venv/
+env/
+
+# Test and lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ---------------------------------------------------------------------------
+# Local configuration
+# ---------------------------------------------------------------------------
+
+# Local overrides, which typically carry account IDs, VPC IDs, and hostnames.
+# The shipped configs use ${VAR} interpolation so they can stay committed.
+config/local.*
+config/*.local.yaml
+.env
+.env.*
+
+# ---------------------------------------------------------------------------
+# Editors and operating system
+# ---------------------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

@@ -1,0 +1,2 @@
+{"sensor":"CPU Load",
+"device":"prod-web-01"

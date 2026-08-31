@@ -1,0 +1,19 @@
+{
+  "sensor": "CPU Load",
+  "device": "prod-web-01",
+  "status": "Down",
+  "message": "Connection failed (Socket error # 10061)",
+  "host": "10.0.2.45",
+  "sensorId": "2001",
+  "deviceId": "1001",
+  "group": "Production",
+  "probe": "Local Probe",
+  "priority": "4",
+  "datetime": "2026-08-21 14:05:12",
+  "lastValue": "97 %",
+  "lastStatus": "%laststatus",
+  "elapsedLastUp": "%elapsed_lastup",
+  "elapsedLastDown": "%elapsed_lastdown",
+  "tags": "%tags",
+  "parentTags": "%parenttags"
+}

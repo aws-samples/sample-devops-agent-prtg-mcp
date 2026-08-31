@@ -1,0 +1,23 @@
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+This project is licensed under the MIT-0 License. See the LICENSE file.
+
+--------------------------------------------------------------------------------
+Third-party trademarks
+--------------------------------------------------------------------------------
+
+PRTG Network Monitor is a product of Paessler AG. This project is not affiliated
+with, endorsed by, or sponsored by Paessler AG. "PRTG" and "PRTG Network
+Monitor" are trademarks of Paessler AG and are used here only to identify the
+product this sample integrates with.
+
+Microsoft Entra ID is a trademark of Microsoft Corporation. Okta, Auth0, Ping
+Identity, and Keycloak are trademarks of their respective owners. References are
+for identification purposes only.
+
+--------------------------------------------------------------------------------
+Attribution
+--------------------------------------------------------------------------------
+
+The Model Context Protocol (MCP) is an open standard originally published by
+Anthropic. See https://modelcontextprotocol.io/

@@ -1,0 +1,166 @@
+# ---------------------------------------------------------------------------
+# MCP server only - you already run AWS DevOps Agent.
+#
+# For the customer who has an Agent Space, has a VPC that can already reach PRTG,
+# and wants one thing: the agent able to query PRTG during an investigation.
+# No alarm pipeline, no API Gateway, no PRTG notification template to configure.
+#
+# Differences from default.yaml, and only these:
+#
+#   deploy_alarm_pipeline  true       -> false     (half 2 only)
+#   network.vpc_id                    -> your existing VPC, subnets pinned
+#   prtg.reachability      same-vpc   -> remote    (PRTG is already somewhere)
+#
+# What you still get: the AgentCore Gateway, the nine read-only tools, the
+# credential secret, the dashboard and the alarms.
+#
+# What you give up: alarms do not start investigations on their own. Whatever
+# already pages you keeps paging you, and the agent can now answer "what does
+# PRTG know about this?" once an investigation exists.
+#
+# Deploy with:
+#     export DEVOPS_AGENT_SPACE_ID=<your agent space id>
+#     make deploy-mcp CONFIG=config/mcp-only.yaml
+#
+# Prerequisites this stack does NOT create:
+#   - The Agent Space. See https://docs.aws.amazon.com/devopsagent/latest/userguide/
+#   - The network path from the VPC below to PRTG. If PRTG is across a peering,
+#     Transit Gateway or VPN, that link and its routes are yours to establish;
+#     this stack adds only the security group rule.
+# ---------------------------------------------------------------------------
+
+region: ap-southeast-2
+name_prefix: prtg-mcp
+
+# Half 2 only: agent -> PRTG.
+#
+# The two halves are separate CloudFormation stacks, so turning the pipeline off
+# here does not strand anything - and turning it on later is one field and a
+# redeploy, not a migration.
+deploy_mcp_server: true
+deploy_alarm_pipeline: false
+
+# --- Knob 1: network egress ------------------------------------------------
+network:
+  mode: nat
+
+  # Deploy into the VPC that already has a route to PRTG. This is the whole point
+  # of this file: reuse what you have rather than build a second VPC beside it.
+  #
+  # NOTE: with mode: nat nothing here is VPC-wide, so this is safe to point at a
+  # shared VPC. That is NOT true of mode: private, which enables private DNS on
+  # five interface endpoints and changes name resolution for every resource in the
+  # VPC. Read the warning in regulated-private.yaml before switching this file to
+  # private in a VPC that hosts anything else.
+  vpc_id: ${VPC_ID:-vpc-0123456789abcdef0}
+
+  # Listing subnet_ids and availability_zones together avoids the synthesis-time
+  # EC2 lookup, so this file synthesises with no AWS credentials. With vpc_id
+  # alone, CDK calls EC2 during synth and needs them.
+  #
+  # The two lists are matched positionally. Pin them to the AZs nearest PRTG:
+  # every tool call crosses this boundary, and cross-AZ transfer is charged.
+  subnet_ids:
+    - ${SUBNET_A:-subnet-0aaaaaaaaaaaaaaaa}
+    - ${SUBNET_B:-subnet-0bbbbbbbbbbbbbbbb}
+  availability_zones:
+    - ap-southeast-2a
+    - ap-southeast-2b
+
+# --- Knob 2: gateway inbound authentication --------------------------------
+auth:
+  # Right default for a same-account deployment: the agent assumes a role granted
+  # invoke on the Gateway. No identity provider, no tokens, nothing to rotate.
+  mode: sigv4
+
+# --- Knob 3: PRTG credential location --------------------------------------
+secret:
+  # An EMPTY secret is created here. Write the credential afterwards:
+  #
+  #   aws secretsmanager put-secret-value \
+  #     --secret-id prtg-mcp/credentials \
+  #     --region ap-southeast-2 \
+  #     --secret-string '{"prtg_url":"https://<host>","prtg_api_key":"<key>"}'
+  #
+  # Create the key signed in as the READ-ONLY user, not as an administrator: a key
+  # inherits the creating account's view of the device tree. See docs/prtg-setup.md.
+  mode: local
+  secret_name: prtg-mcp/credentials
+  credential_ttl_seconds: 900
+
+# --- Knob 4: PRTG reachability and trust -----------------------------------
+prtg:
+  # If PRTG genuinely sits in the VPC above, set this to same-vpc instead. remote
+  # is the likelier case for an existing deployment, and the two differ only in
+  # whether this stack assumes a route already exists.
+  reachability: remote
+
+  # Where PRTG is, so the function's egress is scoped to it rather than left open.
+  # A single /32 is the tightest posture available - prefer it over the wider CIDR.
+  host_cidr: ${PRTG_HOST_IP:-10.50.12.40}/32
+
+  # The wider network, for the route documentation. Not used for the security
+  # group when host_cidr is set.
+  cidr: ${PRTG_NETWORK_CIDR:-10.50.0.0/16}
+
+  # PRTG very often ships a self-signed certificate. Put that certificate in a
+  # secret and set secret.ca_bundle_secret_arn rather than turning this off:
+  # PRTG's API carries the credential in the query string, so an intercepted
+  # connection hands it over.
+  verify_tls: true
+  port: 443
+
+  # A little more generous than the default, since remote means the round trip has
+  # further to travel.
+  connect_timeout_seconds: 8.0
+  read_timeout_seconds: 25.0
+  max_retries: 2
+
+# --- Knob 5: which Agent Space gets the tools ------------------------------
+targeting:
+  mode: single
+
+  # Not used to route alarms here - there is no pipeline. It names the Agent Space
+  # the nine tools are associated with, and it is what register_with_agent_space
+  # below needs.
+  #
+  # The Agent Space must already exist; this sample does not create one.
+  agent_space_id: ${DEVOPS_AGENT_SPACE_ID}
+
+  # Set true to have the deployment register the Gateway as a capability provider
+  # and associate its tools, instead of doing it in the console.
+  #
+  # Off by default because registration is account-level: a second deployment into
+  # the same account collides with the existing registration. If you already
+  # register capability providers by hand, leave this alone and use the
+  # GatewayUrl, InvokerRoleArn and RegistrationInstructions stack outputs.
+  register_with_agent_space: false
+
+# Not used while deploy_alarm_pipeline is false. Kept so that turning the pipeline
+# on is one field rather than a hunt for what else is now required.
+alarm_api_private: false
+alarm_allowed_source_ips:
+  - ${PRTG_SOURCE_IP:-203.0.113.7}/32
+
+observability:
+  log_retention_days: 30
+  alarm_email: ${ALARM_EMAIL:-}
+  dashboard: true
+  tracing: true
+
+mcp_lambda:
+  memory_mb: 256
+  timeout_seconds: 30
+  reserved_concurrency: 10
+
+# Not deployed here. Left at the defaults so the file stays a one-field change
+# away from the full integration.
+pipeline_lambda:
+  memory_mb: 256
+  timeout_seconds: 30
+  reserved_concurrency: 10
+
+tags:
+  Project: prtg-mcp-devops-agent
+  ManagedBy: cdk
+  Deployment: mcp-only

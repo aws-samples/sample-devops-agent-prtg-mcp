@@ -1,0 +1,224 @@
+# ---------------------------------------------------------------------------
+# Default configuration - the quickstart path.
+#
+# Single account, outbound internet via a NAT gateway, IAM (SigV4) authentication,
+# a secret created for you, PRTG inside the VPC this stack builds, and one DevOps
+# Agent Space.
+#
+# This is the configuration to read first. The other files in this directory
+# change one or two knobs each and comment on what that changes.
+#
+# Deploy with:
+#     export DEVOPS_AGENT_SPACE_ID=<your agent space id>
+#     export PRTG_SOURCE_IP=<public IP of your PRTG server>
+#     make deploy CONFIG=config/default.yaml
+#
+# ${VAR} is read from the environment at synthesis time, so this file can be
+# committed without carrying your identifiers. Credentials are never configured
+# here - see the `secret` section.
+# ---------------------------------------------------------------------------
+
+# AWS DevOps Agent is only available in six regions. Deploying elsewhere would
+# build a Gateway that no Agent Space can be pointed at, so this is validated.
+region: ap-southeast-2
+
+# Optional. Setting it enables cross-account consistency checks - for example
+# noticing that an external secret lives somewhere else and warning about the
+# KMS key policy that will be needed.
+# account: "111122223333"
+
+# Prefixes every resource name, so two deployments can coexist in one account.
+name_prefix: prtg-mcp
+
+# The two halves of the integration. Both are on by default because the value of
+# this pattern is the loop: an alarm starts an investigation, and the agent then
+# queries PRTG for the context it needs to actually diagnose it.
+#
+#   deploy_mcp_server     agent -> PRTG. Nine read-only tools behind an
+#                         AgentCore Gateway. Lets the agent pull sensor history
+#                         and device health mid-investigation.
+#   deploy_alarm_pipeline PRTG -> agent. API Gateway and a Lambda that turn a
+#                         PRTG notification into an investigation task.
+#
+# They are separate CloudFormation stacks and can be deployed or destroyed
+# independently. Settings above and below are shared by both.
+deploy_mcp_server: true
+deploy_alarm_pipeline: true
+
+# --- Knob 1: network egress ------------------------------------------------
+network:
+  # nat     - private subnet with a NAT gateway default route. AWS API calls go
+  #           out over public endpoints. ~USD 32/month for the NAT gateway.
+  # private - no NAT, no internet gateway; every AWS API call goes through an
+  #           interface VPC endpoint. See regulated-private.yaml.
+  mode: nat
+
+  # With no vpc_id, a VPC is built here. That is convenient for a first run, but
+  # most real deployments set vpc_id to the VPC that can already reach PRTG.
+  #
+  # vpc_id on its own uses a synthesis-time EC2 lookup, which needs AWS
+  # credentials. Adding subnet_ids and availability_zones avoids the lookup and
+  # lets the stack synthesise offline. See regulated-private.yaml.
+  cidr: 10.0.0.0/16
+  max_azs: 2
+
+# --- Knob 2: gateway inbound authentication --------------------------------
+auth:
+  # sigv4 - IAM request signing. The DevOps Agent assumes a role granted invoke
+  #         on the Gateway. No identity provider, no tokens, nothing to rotate.
+  #         Correct for same-account deployments and the right default.
+  # oidc  - JWT bearer tokens from Cognito, Entra ID, Okta, Auth0, Keycloak or
+  #         any OIDC provider. See multi-account-fanout.yaml.
+  mode: sigv4
+
+# --- Knob 3: PRTG credential location --------------------------------------
+secret:
+  # local - an EMPTY secret is created here and you write the credential to it
+  #         afterwards. Deliberate: a credential placed in this file would end up
+  #         in git history, in every clone, and in any CI log that echoes it. The
+  #         loader rejects a config containing one.
+  #
+  #         After the first deploy, with an API key - the preferred form, because
+  #         deleting one revokes this integration alone:
+  #           aws secretsmanager put-secret-value \
+  #             --secret-id prtg-mcp/credentials \
+  #             --secret-string '{"prtg_url":"https://<host>","prtg_api_key":"<key>"}'
+  #
+  #         Create the key signed in as the READ-ONLY user, under Setup >
+  #         Account Settings > API Keys, Access Level "Read access". A key inherits
+  #         the rights of whoever created it, so one made as an administrator can
+  #         read your whole device tree. It is shown only once.
+  #
+  #         Or, for PRTG versions with no API Keys tab:
+  #           aws secretsmanager put-secret-value \
+  #             --secret-id prtg-mcp/credentials \
+  #             --secret-string '{"prtg_url":"https://<host>","prtg_username":"<user>","prtg_passhash":"<hash>"}'
+  #
+  #         Generate a passhash at https://<prtg-host>/api/getpasshash.htm. If both
+  #         forms are present the API key is used. See docs/prtg-setup.md.
+  #
+  # external - the secret already exists, possibly in another account. See
+  #            regulated-private.yaml.
+  mode: local
+  secret_name: prtg-mcp/credentials
+
+  # How long the Lambda caches the credential. Rotation takes effect within this
+  # window without a forced cold start.
+  credential_ttl_seconds: 900
+
+# --- Knob 4: PRTG reachability and trust -----------------------------------
+prtg:
+  # same-vpc - PRTG is in the Lambda's VPC; no extra routing needed.
+  # remote   - PRTG is in another VPC, account, or on-premises. See the other
+  #            two files.
+  reachability: same-vpc
+
+  # Where PRTG is, so the function's egress can be scoped to it instead of left
+  # open. Required in both reachability modes.
+  #
+  # host_cidr is a single address and is the tightest posture available - prefer
+  # it. Use `cidr` instead only when PRTG's address is not fixed.
+  #
+  # The fallback matches DEFAULT_DEMO_PRTG_IP in app.py, so `cdk deploy -c
+  # demo_prtg=true` works without setting anything. It is inside 10.0.2.0/24, the
+  # first PRIVATE subnet of the VPC this file creates - 10.0.0.0/24 and 10.0.1.0/24
+  # are the public ones. The demo stack refuses to synthesise if the two disagree,
+  # because the failure is otherwise silent: healthy resources, and every tool call
+  # timing out on a security group drop that appears only in flow logs.
+  host_cidr: ${PRTG_PRIVATE_IP:-10.0.2.50}/32
+
+  # Verify PRTG's TLS certificate. On by default.
+  #
+  # PRTG very often ships a self-signed certificate. When it does, put that
+  # certificate in a secret and set secret.ca_bundle_secret_arn rather than
+  # turning verification off: PRTG's API carries the credential in the query
+  # string, so an intercepted connection hands it over. Setting this to false is
+  # possible, and logs a warning on every single invocation.
+  verify_tls: true
+  port: 443
+
+# --- Knob 5: which Agent Space receives investigations ---------------------
+targeting:
+  # single - one Agent Space in this account.
+  # fanout - route to Agent Spaces across many accounts by PRTG group, probe or
+  #          device prefix. See multi-account-fanout.yaml.
+  mode: single
+
+  # The Agent Space must already exist. This sample deliberately does not create
+  # one - AWS publishes its own CDK and CloudFormation getting-started for that,
+  # and duplicating it here would only drift:
+  # https://docs.aws.amazon.com/devopsagent/latest/userguide/
+  agent_space_id: ${DEVOPS_AGENT_SPACE_ID}
+  # Register the MCP server as a DevOps Agent capability provider and associate its
+  # tools with agent_space_id, as part of this deployment. Most guides describe the
+  # console walkthrough; only OAuth providers actually require it, because they need
+  # an interactive browser redirect. A SigV4 Gateway does not, so this can be
+  # infrastructure code.
+  #
+  # Off by default because registration is account-level: a second deployment into
+  # the same account collides with the existing registration, and plenty of teams
+  # register once by hand and manage Agent Spaces separately. Requires mode: single
+  # and auth.mode: sigv4.
+  #
+  # The tool allowlist is derived from tools.py and prefixed with the Gateway target
+  # name, which is what the Gateway actually exposes. Allowlisting bare names such as
+  # get_sensors registers cleanly and exposes nothing.
+  register_with_agent_space: false
+
+  # Suppress duplicate investigations for the same sensor and state inside this
+  # window, using CreateBacklogTask's idempotency token. Set to 0 to disable.
+  deduplication_window_minutes: 30
+
+# --- Who may post alarms ---------------------------------------------------
+# PRTG's "Execute HTTP Action" cannot send custom headers, so an API key is not
+# available and the source address is the control that is. A public endpoint with
+# no restriction would let anyone create investigations in your Agent Space, so
+# this is required rather than optional.
+#
+# Find your PRTG server's public address by running this on the PRTG host:
+#     curl https://checkip.amazonaws.com
+alarm_allowed_source_ips:
+  - ${PRTG_SOURCE_IP}/32
+
+# Set true when PRTG has no public address, to make the API private and reachable
+# only through a VPC endpoint. See regulated-private.yaml.
+alarm_api_private: false
+
+# --- Observability ---------------------------------------------------------
+observability:
+  # Set explicitly. Left unset, CloudWatch retains logs forever, which is a slow
+  # cost leak and an unanswered retention question for logs that contain
+  # infrastructure names and addresses from PRTG.
+  log_retention_days: 30
+
+  # An alarm topic with no subscriber is a common way for alarms to exist and
+  # notify nobody. Without this, a broken PRTG credential goes unnoticed until an
+  # investigation needs the data and cannot get it.
+  alarm_email: ${ALARM_EMAIL:-}
+
+  dashboard: true
+  tracing: true
+
+# --- Function sizing -------------------------------------------------------
+mcp_lambda:
+  # 256 MB rather than the 128 MB minimum: Lambda scales CPU with memory, and
+  # this function spends its time on TLS handshakes and JSON parsing, both
+  # CPU-bound. At 128 MB it runs more than twice as long and usually costs more.
+  memory_mb: 256
+
+  # Room for a VPC cold start (ENI attachment adds seconds) plus a PRTG query on
+  # a busy server, while staying inside the Gateway's patience.
+  timeout_seconds: 30
+
+  # Doubles as a blast-radius limit: an agent stuck in a retry loop cannot become
+  # unbounded load on a production PRTG server.
+  reserved_concurrency: 10
+
+pipeline_lambda:
+  memory_mb: 256
+  timeout_seconds: 30
+  reserved_concurrency: 10
+
+tags:
+  Project: prtg-mcp-devops-agent
+  ManagedBy: cdk

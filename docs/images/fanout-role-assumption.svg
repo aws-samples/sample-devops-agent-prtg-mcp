@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="400" viewBox="0 0 1000 400" font-family="Helvetica, Arial, sans-serif">
+  <!-- Rendered from fanout-role-assumption.drawio in this directory.                     -->
+  <!-- Keep the two in step: edit the .drawio, then mirror the change here.       -->
+  <!-- Service icons are the official AWS Architecture Icons (aws.amazon.com/architecture/icons). -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#545B64"/>
+    </marker>
+    <g id="icon-devops">
+<g clip-path="url(#devops-clip0_184_346)">
+<rect width="80" height="80" fill="#E7157B"/>
+<path d="M43 18C38.6649 18 34.585 19.1105 31.0271 21.0599C31.5132 21.602 32.0418 22.0844 32.6084 22.4923C35.7312 20.9014 39.261 20 43 20C44.0642 20 45.1099 20.0787 46.136 20.2194L34.2849 40.8451L30.2639 33.8893C29.8236 34.5054 29.4318 35.172 29.1076 35.887L37.2664 50H21.0928C20.3854 47.7914 20 45.4402 20 43C20 40.6455 20.3753 38.3813 21.0367 36.2415C20.6829 35.3918 20.2436 34.5986 19.7297 33.8807C18.6177 36.7083 18 39.7825 18 43C18 56.7852 29.2148 68 43 68C56.7851 68 68 56.7852 68 43C68 29.2148 56.7852 18 43 18ZM48.2212 20.605C55.4119 22.2812 61.3191 27.3342 64.1644 34H40.5247L48.2212 20.605ZM35.4419 42.8462L39.3756 36H46.4226L50.5581 43.1538L46.6244 50H39.5774L35.4419 42.8462ZM21.8356 52H45.4753L37.7788 65.395C30.588 63.7188 24.681 58.6658 21.8356 52ZM43 66C41.9358 66 40.8901 65.9213 39.864 65.7806L51.7151 45.1549L59.6362 58.8571C55.4446 63.2526 49.5391 66 43 66ZM48.7336 36H64.9072C65.6145 38.2086 66 40.5598 66 43C66 48.3841 64.1355 53.338 61.0248 57.2613L48.7336 36ZM25 42C24.4473 42 24 41.5523 24 41C24 33.9531 18.9629 28 13 28C12.4473 28 12 27.5523 12 27C12 26.4477 12.4473 26 13 26C18.9629 26 24 20.0469 24 13C24 12.4477 24.4473 12 25 12C25.5527 12 26 12.4477 26 13C26 20.0469 31.0371 26 37 26C37.5527 26 38 26.4477 38 27C38 27.5523 37.5527 28 37 28C31.0371 28 26 33.9531 26 41C26 41.5523 25.5527 42 25 42ZM17.581 27C20.9043 28.4956 23.6152 31.5483 25 35.335C26.3848 31.5483 29.0957 28.4956 32.4189 27C29.0957 25.5044 26.3848 22.4517 25 18.665C23.6152 22.4517 20.9043 25.5044 17.581 27Z" fill="white"/>
+</g>
+<defs>
+<clipPath id="devops-clip0_184_346">
+<rect width="80" height="80" fill="white"/>
+</clipPath>
+</defs>
+</g>
+    <g id="icon-iam">
+    
+    <g id="iam-Icon-Architecture/64/Arch_AWS-Identity-and-Access-Management_64" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="iam-Icon-Architecture-BG/64/Security-Identity-Compliance" fill="#DD344C">
+            <rect id="iam-Rectangle" x="0" y="0" width="80" height="80"></rect>
+        </g>
+        <path d="M14,59 L66,59 L66,21 L14,21 L14,59 Z M68,20 L68,60 C68,60.552 67.553,61 67,61 L13,61 C12.447,61 12,60.552 12,60 L12,20 C12,19.448 12.447,19 13,19 L67,19 C67.553,19 68,19.448 68,20 L68,20 Z M44,48 L59,48 L59,46 L44,46 L44,48 Z M57,42 L62,42 L62,40 L57,40 L57,42 Z M44,42 L52,42 L52,40 L44,40 L44,42 Z M29,46 C29,45.449 28.552,45 28,45 C27.448,45 27,45.449 27,46 C27,46.551 27.448,47 28,47 C28.552,47 29,46.551 29,46 L29,46 Z M31,46 C31,47.302 30.161,48.401 29,48.816 L29,51 L27,51 L27,48.815 C25.839,48.401 25,47.302 25,46 C25,44.346 26.346,43 28,43 C29.654,43 31,44.346 31,46 L31,46 Z M19,53.993 L36.994,54 L36.996,50 L33,50 L33,48 L36.996,48 L36.998,45 L33,45 L33,43 L36.999,43 L37,40.007 L19.006,40 L19,53.993 Z M22,38.001 L34,38.006 L34,31 C34.001,28.697 31.197,26.677 28,26.675 L27.996,26.675 C24.804,26.675 22.004,28.696 22.002,31 L22,38.001 Z M17,54.992 L17.006,39 C17.006,38.734 17.111,38.48 17.299,38.292 C17.486,38.105 17.741,38 18.006,38 L20,38.001 L20.002,31 C20.004,27.512 23.59,24.675 27.996,24.675 L28,24.675 C32.412,24.677 36.001,27.515 36,31 L36,38.007 L38,38.008 C38.553,38.008 39,38.456 39,39.008 L38.994,55 C38.994,55.266 38.889,55.52 38.701,55.708 C38.514,55.895 38.259,56 37.994,56 L18,55.992 C17.447,55.992 17,55.544 17,54.992 L17,54.992 Z M60,36 L62,36 L62,34 L60,34 L60,36 Z M44,36 L55,36 L55,34 L44,34 L44,36 Z" id="iam-AWS-Identity-and-Access-Management_Icon_64_Squid" fill="#FFFFFF"></path>
+    </g>
+</g>
+    <g id="icon-lambda">
+    
+    <g id="lambda-Icon-Architecture/64/Arch_AWS-Lambda_64" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="lambda-Icon-Architecture-BG/64/Compute" fill="#ED7100">
+            <rect id="lambda-Rectangle" x="0" y="0" width="80" height="80"></rect>
+        </g>
+        <path d="M28.0075352,66 L15.5907274,66 L29.3235885,37.296 L35.5460249,50.106 L28.0075352,66 Z M30.2196674,34.553 C30.0512768,34.208 29.7004629,33.989 29.3175745,33.989 L29.3145676,33.989 C28.9286723,33.99 28.5778583,34.211 28.4124746,34.558 L13.097944,66.569 C12.9495999,66.879 12.9706487,67.243 13.1550766,67.534 C13.3374998,67.824 13.6582439,68 14.0020416,68 L28.6420072,68 C29.0299071,68 29.3817234,67.777 29.5481094,67.428 L37.563706,50.528 C37.693006,50.254 37.6920037,49.937 37.5586944,49.665 L30.2196674,34.553 Z M64.9953491,66 L52.6587274,66 L32.866809,24.57 C32.7014253,24.222 32.3486067,24 31.9617091,24 L23.8899822,24 L23.8990031,14 L39.7197081,14 L59.4204149,55.429 C59.5857986,55.777 59.9386172,56 60.3255148,56 L64.9953491,56 L64.9953491,66 Z M65.9976745,54 L60.9599868,54 L41.25928,12.571 C41.0938963,12.223 40.7410777,12 40.3531778,12 L22.89768,12 C22.3453987,12 21.8963569,12.447 21.8953545,12.999 L21.884329,24.999 C21.884329,25.265 21.9885708,25.519 22.1780103,25.707 C22.3654452,25.895 22.6200358,26 22.8866544,26 L31.3292417,26 L51.1221625,67.43 C51.2885485,67.778 51.6393624,68 52.02626,68 L65.9976745,68 C66.5519605,68 67,67.552 67,67 L67,55 C67,54.448 66.5519605,54 65.9976745,54 L65.9976745,54 Z" id="lambda-AWS-Lambda_Icon_64_Squid" fill="#FFFFFF"></path>
+    </g>
+</g>
+  </defs>
+  <rect width="1000" height="400" fill="#FFFFFF"/>
+  <text x="500" y="30" font-size="15" font-weight="bold" fill="#232F3E" text-anchor="middle">Fan-out - which way the role assumption goes</text>
+  <text x="500" y="50" font-size="11.5" fill="#545B64" text-anchor="middle">Assumption runs outward from the pipeline. Nothing in a workload account can reach back.</text>
+  <rect x="40" y="70" width="330" height="290" rx="8" fill="none" stroke="#232F3E" stroke-width="1.4" stroke-dasharray="6 3"/>
+  <text x="52" y="89" font-size="11.5" font-weight="bold" fill="#232F3E">Pipeline account</text>
+  <rect x="440" y="70" width="520" height="290" rx="8" fill="none" stroke="#232F3E" stroke-width="1.4" stroke-dasharray="6 3"/>
+  <text x="452" y="89" font-size="11.5" font-weight="bold" fill="#232F3E">Workload account (one per route)</text>
+  <rect x="65" y="130" width="190" height="80" rx="8" fill="#FFFFFF" stroke="#879196" stroke-width="1.3"/>
+  <use href="#icon-lambda" transform="translate(77,150) scale(0.5)"/>
+  <text x="127" y="166" font-size="12" font-weight="bold" fill="#232F3E">AWS Lambda</text>
+  <text x="127" y="182" font-size="10.5" fill="#545B64">alarm pipeline</text>
+  <rect x="65" y="250" width="280" height="80" rx="8" fill="#FFFFFF" stroke="#879196" stroke-width="1.3"/>
+  <use href="#icon-iam" transform="translate(77,270) scale(0.5)"/>
+  <text x="127" y="286" font-size="12" font-weight="bold" fill="#232F3E">Pipeline Lambda role</text>
+  <text x="127" y="302" font-size="10.5" fill="#545B64">sts:AssumeRole, scoped by aws:ResourceOrgID</text>
+  <rect x="470" y="130" width="300" height="90" rx="8" fill="#FFFFFF" stroke="#879196" stroke-width="1.3"/>
+  <use href="#icon-iam" transform="translate(482,155) scale(0.5)"/>
+  <text x="532" y="163" font-size="12" font-weight="bold" fill="#232F3E">PrtgDevOpsAgent-</text>
+  <text x="532" y="179" font-size="12" font-weight="bold" fill="#232F3E">InvestigationRole</text>
+  <text x="532" y="195" font-size="10.5" fill="#545B64">trusts the pipeline role + ExternalId</text>
+  <rect x="470" y="260" width="300" height="80" rx="8" fill="#FFFFFF" stroke="#879196" stroke-width="1.3"/>
+  <use href="#icon-devops" transform="translate(482,280) scale(0.5)"/>
+  <text x="532" y="296" font-size="12" font-weight="bold" fill="#232F3E">AWS DevOps Agent</text>
+  <text x="532" y="312" font-size="10.5" fill="#545B64">that account's Agent Space</text>
+  <path d="M 160 250 L 160 214" fill="none" stroke="#545B64" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="170" y="236" font-size="10" fill="#545B64" text-anchor="start">runs as</text>
+  <path d="M 345 290 L 405 290 L 405 175 L 466 175" fill="none" stroke="#545B64" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="398" y="130" font-size="10" fill="#232F3E" text-anchor="end">1. sts:AssumeRole</text>
+  <text x="398" y="143" font-size="10" fill="#232F3E" text-anchor="end">+ sts:ExternalId</text>
+  <path d="M 620 220 L 620 256" fill="none" stroke="#545B64" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="630" y="242" font-size="10" fill="#232F3E" text-anchor="start">2. aidevops:CreateBacklogTask</text>
+</svg>

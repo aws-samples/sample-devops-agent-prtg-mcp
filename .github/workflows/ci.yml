@@ -1,0 +1,97 @@
+name: CI
+
+# Everything here runs without AWS credentials. That is deliberate: it means every
+# pull request verifies the claims this sample makes about itself - IAM scoping, the
+# tool schema contract, the independence of the five configuration knobs - without
+# anyone needing to attach a cloud account to the repository.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the floor declared in pyproject; 3.13 matches the Lambda runtime.
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          npm ci
+
+      - name: Lint
+        run: |
+          ruff check src infrastructure tests app.py
+          ruff format --check src infrastructure tests app.py
+
+      - name: Unit tests
+        # The shipped configs interpolate these with no fallback, so any test that
+        # loads one needs them present. Tests that synthesise a stack set their own
+        # defaults at import, but supplying them here too keeps a clean checkout
+        # working regardless of which test runs first.
+        env:
+          DEVOPS_AGENT_SPACE_ID: 11111111-2222-3333-4444-555555555555
+          PRTG_SOURCE_IP: 203.0.113.7
+          # Matches the config/default.yaml fallback and DEFAULT_DEMO_PRTG_IP, so the
+          # demo stack's egress cross-check sees the same address CI synthesises with.
+          PRTG_PRIVATE_IP: 10.0.2.50
+        run: pytest tests/unit --cov --cov-report=term-missing
+
+      - name: Synthesise every shipped configuration
+        # Proves each example in config/ is deployable, and that none of them needs
+        # credentials to synthesise. An example nobody has run is an example that
+        # does not work.
+        env:
+          DEVOPS_AGENT_SPACE_ID: as-ci-placeholder
+          PRTG_SOURCE_IP: 203.0.113.7
+        run: |
+          failed=0
+          for cfg in config/*.yaml; do
+            printf '%-34s' "$(basename "$cfg")"
+            if npx cdk synth --quiet -c config="$cfg" >/dev/null 2>/tmp/synth.log; then
+              echo "OK"
+            else
+              echo "FAILED"; sed -n '1,40p' /tmp/synth.log; failed=1
+            fi
+          done
+          exit $failed
+
+  sanitisation:
+    # Adapting this sample means supplying a real PRTG passhash, API key, hostnames
+    # and private IP addresses. This job rejects any of them reaching a tracked file,
+    # because a committed credential survives a later cleanup -- scrubbing the working
+    # tree does not rewrite history, and rotation becomes the only remedy.
+    #
+    # The same script runs locally via `make check-sanitisation`, so a contributor
+    # finds a problem before pushing rather than in CI.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject credentials and site-specific identifiers
+        run: bash scripts/check-sanitisation.sh

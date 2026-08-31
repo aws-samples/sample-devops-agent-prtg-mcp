@@ -1,0 +1,161 @@
+# ---------------------------------------------------------------------------
+# Enterprise multi-account fan-out.
+#
+# One PRTG installation and one shared pipeline, routing investigations to Agent
+# Spaces in several workload accounts based on PRTG alarm metadata. This is the
+# pattern to reach for when a central monitoring team serves teams that each own
+# their own AWS account.
+#
+# Differences from default.yaml:
+#
+#   auth.mode          sigv4    -> oidc / Cognito  (created by this stack)
+#   prtg.reachability  same-vpc -> remote          (monitoring account)
+#   targeting.mode     single   -> fanout          (N accounts)
+#
+# The important property: adding a workload account is a routing entry here plus
+# one IAM role in that account. No Lambda change, no API Gateway change, no PRTG
+# notification-template change.
+#
+# In the conventional scenario numbering this is roughly pipeline Scenario A combined
+# with MCP Scenario 7. See docs/deployment-matrix.md.
+#
+# Prerequisites this stack does NOT create:
+#   - An Agent Space in each workload account.
+#   - PrtgDevOpsAgentInvestigationRole in each workload account. The trust policy
+#     it needs is emitted as a stack output; see docs/deployment-matrix.md.
+#   - The network path to PRTG.
+# ---------------------------------------------------------------------------
+
+region: us-east-1
+account: ${PIPELINE_ACCOUNT_ID:-111122223333}
+name_prefix: prtg-mcp
+
+deploy_mcp_server: true
+deploy_alarm_pipeline: true
+
+network:
+  mode: nat
+  vpc_id: ${VPC_ID:-vpc-0123456789abcdef0}
+  subnet_ids:
+    - ${SUBNET_A:-subnet-0aaaaaaaaaaaaaaaa}
+    - ${SUBNET_B:-subnet-0bbbbbbbbbbbbbbbb}
+  availability_zones:
+    - us-east-1a
+    - us-east-1b
+
+# --- Knob 2: Cognito, created here -----------------------------------------
+auth:
+  mode: oidc
+
+  # provider: cognito is the one option that builds infrastructure - a user pool,
+  # resource server, app client and domain - and derives the discovery URL,
+  # audience and client ID from them. Do not set discovery_url yourself here.
+  #
+  # Useful when there is no corporate identity provider to federate with, or when
+  # the Gateway is called from more than one account and IAM would mean managing
+  # cross-account trust for every caller.
+  #
+  # After deployment the token endpoint and client ID are stack outputs; the
+  # client secret is in Secrets Manager. Register those in the DevOps Agent
+  # console under Capability Providers, choosing OAuth Client Credentials.
+  provider: cognito
+  cognito_resource_server_id: prtg-mcp-api
+  cognito_scope_name: invoke
+
+secret:
+  mode: local
+  secret_name: prtg-mcp/credentials
+  credential_ttl_seconds: 900
+
+# --- Knob 4: PRTG in the monitoring account --------------------------------
+prtg:
+  reachability: remote
+  host_cidr: ${PRTG_HOST_IP:-10.20.30.40}/32
+  cidr: ${PRTG_NETWORK_CIDR:-10.20.0.0/16}
+  verify_tls: true
+  port: 443
+
+# --- Knob 5: fan out to N workload accounts --------------------------------
+targeting:
+  mode: fanout
+
+  # Matched in this order, first hit wins:
+  #   1. exact PRTG group name
+  #   2. exact PRTG probe name
+  #   3. device-name prefix, taken as the text before the first '-' or '.'
+  #   4. the DEFAULT route
+  #
+  # Matching is case-sensitive, so these values must match PRTG exactly. A
+  # mismatch is the most common reason an alarm lands in the wrong Agent Space.
+  #
+  # The routing table is stored in an SSM parameter, not a Lambda environment
+  # variable. The reference implementation used an env var holding escaped JSON,
+  # which is unpleasant to edit and hits the 4 KB environment limit at roughly a
+  # dozen accounts.
+  routes:
+    - match: Production
+      account_id: ${PROD_ACCOUNT_ID:-222233334444}
+      agent_space_id: ${PROD_AGENT_SPACE_ID:-as-prod-001}
+
+    - match: Staging
+      account_id: ${STAGING_ACCOUNT_ID:-333344445555}
+      agent_space_id: ${STAGING_AGENT_SPACE_ID:-as-staging-001}
+
+    - match: DR
+      account_id: ${DR_ACCOUNT_ID:-444455556666}
+      agent_space_id: ${DR_AGENT_SPACE_ID:-as-dr-001}
+      # Override when the role is named differently in that account.
+      role_name: PrtgDevOpsAgentInvestigationRole
+
+    # Exactly one DEFAULT route is required. Without it an alarm from an unmapped
+    # PRTG group is dropped, and a real alert silently never reaching any agent is
+    # the worst thing this system can do. Point it at whichever Agent Space has
+    # someone watching it.
+    - match: DEFAULT
+      account_id: ${PROD_ACCOUNT_ID:-222233334444}
+      agent_space_id: ${PROD_AGENT_SPACE_ID:-as-prod-001}
+
+  # Shared value each workload account's trust policy requires as
+  # sts:ExternalId. Guards against the confused-deputy problem.
+  external_id: ${EXTERNAL_ID:-prtg-devops-agent-integration}
+
+  # With an organization ID, the assume-role policy wildcards the account and
+  # constrains it with aws:ResourceOrgID - the organisation of the role being
+  # assumed - so adding an account needs no IAM change here. Without it, every
+  # target role ARN is listed explicitly and each new account is a policy update:
+  # workable, but it defeats much of the point of fan-out.
+  #
+  # Not aws:PrincipalOrgID, which is the organisation of the caller and therefore
+  # always this account's own. In an identity policy that condition is satisfied on
+  # every call and restricts nothing. See docs/deployment-matrix.md.
+  organization_id: ${AWS_ORG_ID:-o-exampleorgid}
+
+  deduplication_window_minutes: 30
+
+alarm_allowed_source_ips:
+  - ${PRTG_HOST_IP:-10.20.30.40}/32
+alarm_api_private: true
+
+observability:
+  log_retention_days: 90
+  alarm_topic_arn: ${ALARM_TOPIC_ARN:-arn:aws:sns:us-east-1:111122223333:platform-alerts}
+  dashboard: true
+  tracing: true
+
+mcp_lambda:
+  memory_mb: 512
+  timeout_seconds: 45
+
+  # Higher than the default: one Gateway now serves investigations from several
+  # workload accounts at once.
+  reserved_concurrency: 25
+
+pipeline_lambda:
+  memory_mb: 256
+  timeout_seconds: 30
+  reserved_concurrency: 25
+
+tags:
+  Project: prtg-mcp-devops-agent
+  ManagedBy: cdk
+  Pattern: multi-account-fanout

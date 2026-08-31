@@ -1,59 +1,79 @@
-# Contributing Guidelines
+# Contributing
 
-Thank you for your interest in contributing to our project. Whether it's a bug report, new feature, correction, or additional
-documentation, we greatly value feedback and contributions from our community.
+Thanks for your interest in contributing. Please read this through before
+opening an issue or pull request.
 
-Please read through this document before submitting any issues or pull requests to ensure we have all the necessary
-information to effectively respond to your bug report or contribution.
+## Reporting bugs and suggesting features
 
+Use GitHub issues. Before opening one, search existing and recently closed issues
+to avoid duplicates. A useful report includes:
 
-## Reporting Bugs/Feature Requests
+- A reproducible test case or a sequence of steps
+- The version of this project being used
+- Which deployment configuration you used (paste the relevant `config/*.yaml`,
+  with account IDs, hostnames, and ARNs redacted)
+- Anything unusual about your environment
 
-We welcome you to use the GitHub issue tracker to report bugs or suggest features.
+**Do not report security issues through GitHub.** See [SECURITY.md](SECURITY.md).
 
-When filing an issue, please check existing open, or recently closed, issues to make sure somebody else hasn't already
-reported the issue. Please try to include as much information as you can. Details like these are incredibly useful:
+## Contributing code
 
-* A reproducible test case or series of steps
-* The version of our code being used
-* Any modifications you've made relevant to the bug
-* Anything unusual about your environment or deployment
+1. Work against the latest `main`.
+2. Check existing open and recently merged pull requests so you are not
+   duplicating effort.
+3. Open an issue first for anything substantial. A large PR that does not fit the
+   project's direction wastes your time and ours.
 
+Then:
 
-## Contributing via Pull Requests
-Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
+```bash
+git checkout -b my-change
+# make changes
+make lint test          # must pass
+git commit -m "feat: describe the change"
+```
 
-1. You are working against the latest source on the *main* branch.
-2. You check existing open, and recently merged, pull requests to make sure someone else hasn't addressed the problem already.
-3. You open an issue to discuss any significant work - we would hate for your time to be wasted.
+Send the pull request with a clear description, and reference any related issue.
 
-To send us a pull request, please:
+### What we ask of a change
 
-1. Fork the repository.
-2. Modify the source; please focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
-3. Ensure local tests pass.
-4. Commit to your fork using clear commit messages.
-5. Send us a pull request, answering any default questions in the pull request interface.
-6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
+- **Tests pass and new behaviour is tested.** `make test` runs unit tests with a
+  mocked PRTG API, so it needs no AWS account and no PRTG server.
+- **`make synth-all` passes.** This synthesises every configuration in `config/`.
+  A change that only works for the default configuration is not finished - the
+  point of this sample is that the five configuration knobs are independent.
+- **Security posture is preserved.** In particular: the PRTG tool surface stays
+  read-only, IAM policies stay scoped to specific ARNs, and TLS verification
+  stays on by default. If a change needs to relax one of these, say so
+  explicitly in the PR description and explain why.
+- **No secrets, account IDs, IP addresses, hostnames, or customer names.**
+  `make check-sanitisation` catches credential shapes, AWS keys and internal
+  hostnames - but **not** bare IP addresses, and nothing text-based can inspect a
+  rendered image. Check those yourself. If your change adds or regenerates a
+  diagram, read [`docs/images/README.md`](docs/images/README.md) first for the
+  labels-and-crop checklist.
+- **Docs updated.** If you add a configuration option, it belongs in
+  `docs/deployment-matrix.md` and in the config schema.
+- Keep commits focused. Unrelated reformatting makes review harder.
 
-GitHub provides additional document on [forking a repository](https://help.github.com/articles/fork-a-repo/) and
-[creating a pull request](https://help.github.com/articles/creating-a-pull-request/).
+### Adding a PRTG tool
 
+If you add a tool, add it to `src/prtg_mcp/tools.py` only. The schema there is
+the single source of truth: the Lambda dispatch table and the AgentCore Gateway
+target schema are both derived from it, so they cannot drift apart. A test
+asserts this, and it will fail if you define a tool the handler cannot serve or
+vice versa.
 
-## Finding contributions to work on
-Looking at the existing issues is a great way to find something to contribute on. As our projects, by default, use the default GitHub issue labels (enhancement/bug/duplicate/help wanted/invalid/question/wontfix), looking at any 'help wanted' issues is a great place to start.
+New tools must be read-only. A tool that mutates PRTG changes the security
+assessment of the whole integration - see
+[`docs/security.md`](docs/security.md#why-read-only-matters). If you need
+mutating behaviour, that is a fork, not a contribution.
 
+## Code of conduct
 
-## Code of Conduct
-This project has adopted the [Amazon Open Source Code of Conduct](https://aws.github.io/code-of-conduct).
-For more information see the [Code of Conduct FAQ](https://aws.github.io/code-of-conduct-faq) or contact
-opensource-codeofconduct@amazon.com with any additional questions or comments.
-
-
-## Security issue notifications
-If you discover a potential security issue in this project we ask that you notify AWS/Amazon Security via our [vulnerability reporting page](http://aws.amazon.com/security/vulnerability-reporting/). Please do **not** create a public github issue.
-
+This project follows the [Amazon Open Source Code of Conduct](https://aws.github.io/code-of-conduct).
 
 ## Licensing
 
-See the [LICENSE](LICENSE) file for our project's licensing. We will ask you to confirm the licensing of your contribution.
+This project is licensed under MIT-0. We may ask you to confirm the licensing of
+your contribution.
